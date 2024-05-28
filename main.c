@@ -3,38 +3,27 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <pthread.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 #define PORT 8080
 #define BUF_SIZE 1024
 
 int client_count = 0;
-pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
+int client_sockets[2] = {0};
+pid_t child_pids[2] = {0};
+int server_socket;
 
-void *handle_client(void *client_socket);
+void signal_handler(int sig);
 
-void signal_handler(int sig)
-{
-    if (sig == SIGUSR1)
-    {
-        printf("Server shutting down...\n");
-        exit(0);
-    }
-    else if (sig == SIGUSR2)
-    {
-        pthread_mutex_lock(&count_mutex);
-        printf("Current number of connected clients: %d\n", client_count);
-        pthread_mutex_unlock(&count_mutex);
-    }
-}
+void handle_client(int client_socket);
 
 int main()
 {
-    int server_socket, client_socket;
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_size;
-    pthread_t tid;
+    int client_socket;
+    pid_t pid;
 
     // Setting up the signal handlers
     signal(SIGUSR1, signal_handler);
@@ -81,14 +70,33 @@ int main()
             continue;
         }
 
-        pthread_mutex_lock(&count_mutex);
+        client_sockets[client_count] = client_socket;
         client_count++;
-        pthread_mutex_unlock(&count_mutex);
 
-        if (pthread_create(&tid, NULL, handle_client, (void *)&client_socket) != 0)
+        if (client_count == 2)
         {
-            perror("Thread creation failed");
-            close(client_socket);
+            pid = fork();
+            if (pid == 0)
+            { // Child process
+                close(server_socket);
+                handle_client(client_sockets[0]);
+                handle_client(client_sockets[1]);
+                exit(0);
+            }
+            else if (pid > 0)
+            { // Parent process
+                child_pids[0] = pid;
+                close(client_sockets[0]);
+                close(client_sockets[1]);
+                client_count = 0;
+            }
+            else
+            {
+                perror("Fork failed");
+                close(client_sockets[0]);
+                close(client_sockets[1]);
+                client_count = 0;
+            }
         }
     }
 
@@ -96,24 +104,39 @@ int main()
     return 0;
 }
 
-void *handle_client(void *client_socket)
+void handle_client(int client_socket)
 {
-    int sock = *(int *)client_socket;
     char buffer[BUF_SIZE];
     int bytes_read;
+    int other_socket = (client_sockets[0] == client_socket) ? client_sockets[1] : client_sockets[0];
 
-    while ((bytes_read = read(sock, buffer, BUF_SIZE - 1)) > 0)
+    while ((bytes_read = read(client_socket, buffer, BUF_SIZE - 1)) > 0)
     {
         buffer[bytes_read] = '\0';
-        printf("Client says: %s\n", buffer);
-        write(sock, buffer, strlen(buffer));
+        printf("Client %d says: %s\n", client_socket, buffer);
+        write(other_socket, buffer, strlen(buffer));
     }
 
-    close(sock);
+    close(client_socket);
+}
 
-    pthread_mutex_lock(&count_mutex);
-    client_count--;
-    pthread_mutex_unlock(&count_mutex);
-
-    return NULL;
+void signal_handler(int sig)
+{
+    if (sig == SIGUSR1)
+    {
+        printf("Server shutting down...\n");
+        for (int i = 0; i < 2; i++)
+        {
+            if (child_pids[i] > 0)
+            {
+                kill(child_pids[i], SIGTERM);
+            }
+        }
+        close(server_socket);
+        exit(0);
+    }
+    else if (sig == SIGUSR2)
+    {
+        printf("Current number of connected clients: %d\n", client_count);
+    }
 }
