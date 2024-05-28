@@ -16,7 +16,7 @@ int server_socket;
 
 void signal_handler(int sig);
 
-void handle_client(int client_socket);
+void handle_client(int client_socket, int other_socket);
 
 int main()
 {
@@ -79,8 +79,8 @@ int main()
             if (pid == 0)
             { // Child process
                 close(server_socket);
-                handle_client(client_sockets[0]);
-                handle_client(client_sockets[1]);
+                handle_client(client_sockets[0], client_sockets[1]);
+                handle_client(client_sockets[1], client_sockets[0]);
                 exit(0);
             }
             else if (pid > 0)
@@ -104,17 +104,29 @@ int main()
     return 0;
 }
 
-void handle_client(int client_socket)
+void handle_client(int client_socket, int other_socket)
 {
     char buffer[BUF_SIZE];
+    char message[BUF_SIZE];
     int bytes_read;
-    int other_socket = (client_sockets[0] == client_socket) ? client_sockets[1] : client_sockets[0];
 
-    while ((bytes_read = read(client_socket, buffer, BUF_SIZE - 1)) > 0)
+    while (1)
     {
+        // Prompt the client to enter a response
+        snprintf(message, sizeof(message), "Donnez votre réponse: ");
+        write(client_socket, message, strlen(message));
+
+        // Read the client's response
+        bytes_read = read(client_socket, buffer, BUF_SIZE - 1);
+        if (bytes_read <= 0)
+        {
+            break;
+        }
         buffer[bytes_read] = '\0';
-        printf("Client %d says: %s\n", client_socket, buffer);
-        write(other_socket, buffer, strlen(buffer));
+
+        // Format and send the response to the other client
+        snprintf(message, sizeof(message), "Le client distant dit: %s", buffer);
+        write(other_socket, message, strlen(message));
     }
 
     close(client_socket);
