@@ -4,98 +4,151 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <signal.h>
-#include <sys/wait.h>
+#include <sys/select.h>
 
 #define PORT 8080
 #define BUF_SIZE 1024
 
-int client_count = 0;
-int client_sockets[2] = {0};
-pid_t child_pids[2] = {0};
+int client_sockets[2] = {0, 0};
 int server_socket;
+int active_connections = 0;
 
 void signal_handler(int sig);
-
-void handle_client(int client_socket, int other_socket);
 
 int main()
 {
     struct sockaddr_in server_addr, client_addr;
-    socklen_t client_addr_size;
-    int client_socket;
-    pid_t pid;
+    socklen_t addr_len = sizeof(client_addr);
+    fd_set read_fds;
+    int max_sd, new_socket, activity, valread;
+    char buffer[BUF_SIZE];
+    char message[BUF_SIZE];
+    int opt = 1;
 
-    // Setting up the signal handlers
+    // Gestion des signaux pour une extinction en douceur et le compte des connexions actives
     signal(SIGUSR1, signal_handler);
     signal(SIGUSR2, signal_handler);
+    signal(SIGCHLD, SIG_IGN); // Pour éviter les processus zombies
 
-    // Creating socket
+    // Création du socket
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket == -1)
     {
-        perror("Socket creation failed");
+        perror("Échec de la création du socket");
         exit(EXIT_FAILURE);
     }
 
-    // Configuring server address structure
+    // Définir les options du socket pour réutiliser l'adresse
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
+    {
+        perror("setsockopt");
+        close(server_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    // Configuration de la structure de l'adresse du serveur
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(PORT);
 
-    // Binding the socket
+    // Liaison du socket
     if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {
-        perror("Binding failed");
+        perror("Échec de la liaison");
         close(server_socket);
         exit(EXIT_FAILURE);
     }
 
-    // Listening for connections
-    if (listen(server_socket, 10) == -1)
+    // Écoute des connexions
+    if (listen(server_socket, 2) == -1)
     {
-        perror("Listening failed");
+        perror("Échec de l'écoute");
         close(server_socket);
         exit(EXIT_FAILURE);
     }
 
-    printf("Server is listening on port %d...\n", PORT);
+    printf("Le serveur écoute sur le port %d\n", PORT);
 
     while (1)
     {
-        client_addr_size = sizeof(client_addr);
-        client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_size);
-        if (client_socket == -1)
+        FD_ZERO(&read_fds);
+        FD_SET(server_socket, &read_fds);
+        max_sd = server_socket;
+
+        for (int i = 0; i < 2; i++)
         {
-            perror("Accept failed");
+            if (client_sockets[i] > 0)
+            {
+                FD_SET(client_sockets[i], &read_fds);
+                if (client_sockets[i] > max_sd)
+                    max_sd = client_sockets[i];
+            }
+        }
+
+        activity = select(max_sd + 1, &read_fds, NULL, NULL, NULL);
+        if (activity < 0)
+        {
+            perror("Erreur de select");
             continue;
         }
 
-        client_sockets[client_count] = client_socket;
-        client_count++;
-
-        if (client_count == 2)
+        // Vérifier les nouvelles connexions
+        if (FD_ISSET(server_socket, &read_fds))
         {
-            pid = fork();
-            if (pid == 0)
-            { // Child process
-                close(server_socket);
-                handle_client(client_sockets[0], client_sockets[1]);
-                handle_client(client_sockets[1], client_sockets[0]);
-                exit(0);
-            }
-            else if (pid > 0)
-            { // Parent process
-                child_pids[0] = pid;
-                close(client_sockets[0]);
-                close(client_sockets[1]);
-                client_count = 0;
-            }
-            else
+            new_socket = accept(server_socket, (struct sockaddr *)&client_addr, &addr_len);
+            if (new_socket == -1)
             {
-                perror("Fork failed");
-                close(client_sockets[0]);
-                close(client_sockets[1]);
-                client_count = 0;
+                perror("Échec de l'acceptation");
+                continue;
+            }
+
+            printf("Nouvelle connexion acceptée\n");
+            active_connections++;
+            printf("Nombre de connexions actives : %d\n", active_connections);
+
+            for (int i = 0; i < 2; i++)
+            {
+                if (client_sockets[i] == 0)
+                {
+                    client_sockets[i] = new_socket;
+                    break;
+                }
+            }
+        }
+
+        // Vérifier les opérations d'E/S sur n'importe quel socket
+        for (int i = 0; i < 2; i++)
+        {
+            if (client_sockets[i] > 0 && FD_ISSET(client_sockets[i], &read_fds))
+            {
+                valread = read(client_sockets[i], buffer, BUF_SIZE);
+                if (valread == 0)
+                {
+                    // Client déconnecté
+                    printf("Client %d déconnecté\n", i + 1);
+                    close(client_sockets[i]);
+                    client_sockets[i] = 0;
+                    active_connections--;
+                    printf("Nombre de connexions actives : %d\n", active_connections);
+                }
+                else
+                {
+                    buffer[valread] = '\0';
+                    printf("Client %d: %s\n", i + 1, buffer);
+
+                    // Envoyer le message aux deux clients
+                    for (int j = 0; j < 2; j++)
+                    {
+                        if (client_sockets[j] > 0)
+                        {
+                            snprintf(message, sizeof(message), "Client %d: %s", i + 1, buffer);
+                            if (write(client_sockets[j], message, strlen(message)) == -1)
+                            {
+                                perror("Échec de l'écriture au client");
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -104,44 +157,16 @@ int main()
     return 0;
 }
 
-void handle_client(int client_socket, int other_socket)
-{
-    char buffer[BUF_SIZE];
-    char message[BUF_SIZE];
-    int bytes_read;
-
-    while (1)
-    {
-        // Prompt the client to enter a response
-        snprintf(message, sizeof(message), "Donnez votre réponse: ");
-        write(client_socket, message, strlen(message));
-
-        // Read the client's response
-        bytes_read = read(client_socket, buffer, BUF_SIZE - 1);
-        if (bytes_read <= 0)
-        {
-            break;
-        }
-        buffer[bytes_read] = '\0';
-
-        // Format and send the response to the other client
-        snprintf(message, sizeof(message), "Le client distant dit: %s", buffer);
-        write(other_socket, message, strlen(message));
-    }
-
-    close(client_socket);
-}
-
 void signal_handler(int sig)
 {
     if (sig == SIGUSR1)
     {
-        printf("Server shutting down...\n");
+        printf("Arrêt du serveur...\n");
         for (int i = 0; i < 2; i++)
         {
-            if (child_pids[i] > 0)
+            if (client_sockets[i] > 0)
             {
-                kill(child_pids[i], SIGTERM);
+                close(client_sockets[i]);
             }
         }
         close(server_socket);
@@ -149,6 +174,6 @@ void signal_handler(int sig)
     }
     else if (sig == SIGUSR2)
     {
-        printf("Current number of connected clients: %d\n", client_count);
+        printf("Nombre de connexions actives : %d\n", active_connections);
     }
 }
