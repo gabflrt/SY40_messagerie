@@ -4,21 +4,36 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
+#include <termios.h>
+#include <time.h>
 
 #define PORT 8080
 #define BUF_SIZE 1024
 #define MAX_RETRIES 5
 #define RETRY_DELAY 2 // seconds
 
-int main()
+
+int main(int argc, char *argv[])
 {
+    if (argc != 2)
+    {
+        fprintf(stderr, "Usage: %s <client_name>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    char *client_name = argv[1];
     int sock;
     struct sockaddr_in server_addr;
     char buffer[BUF_SIZE];
+    char last_sent_message[BUF_SIZE] = "";
     int bytes_read;
     fd_set read_fds;
     int retries = 0;
 
+    time_t currentTime;
+    struct tm *localTime;
+
+    
     while (retries < MAX_RETRIES)
     {
         // Creating socket
@@ -79,7 +94,12 @@ int main()
                 break;
             }
             buffer[bytes_read] = '\0';
-            printf("%s\n", buffer);
+
+            // Check if the received message is the last sent message
+            if (strcmp(buffer, last_sent_message) != 0)
+            {
+                printf("%s\n", buffer);
+            }
         }
 
         // Check if it's user input
@@ -87,13 +107,37 @@ int main()
         {
             fgets(buffer, BUF_SIZE, stdin);
             buffer[strcspn(buffer, "\n")] = '\0'; // Remove newline character
-            if (write(sock, buffer, strlen(buffer)) == -1)
+            time(&currentTime);
+            // Convertir en heure locale
+            localTime = localtime(&currentTime);
+            int hours = localTime->tm_hour;
+            int minutes = localTime->tm_min;
+
+
+            // Formater le message avec le nom du client
+            char formatted_message[BUF_SIZE];
+            snprintf(formatted_message, BUF_SIZE, "[%02d:%02d] %s : %s", hours, minutes, client_name, buffer);
+
+            // Stocker le dernier message envoyé
+            strcpy(last_sent_message, formatted_message);
+
+            // Affichage local du message avec le nom du client
+            
+            printf("\x1b[1A");
+            printf("\x1b[K");
+            printf("%s\n", formatted_message);
+            
+
+            // Sending the formatted message to the server
+            if (write(sock, formatted_message, strlen(formatted_message)) == -1)
             {
                 perror("Write to server failed");
                 break;
             }
         }
     }
+
+    // Réactiver l'écho de l'entrée utilisateur avant de quitter
 
     close(sock);
     return 0;

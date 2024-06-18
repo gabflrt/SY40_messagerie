@@ -8,8 +8,9 @@
 
 #define PORT 8080
 #define BUF_SIZE 1024
+#define MAX_CLIENTS 10
 
-int client_sockets[2] = {0, 0};
+int client_sockets[MAX_CLIENTS] = {0};
 int server_socket;
 int active_connections = 0;
 
@@ -22,7 +23,6 @@ int main()
     fd_set read_fds;
     int max_sd, new_socket, activity, valread;
     char buffer[BUF_SIZE];
-    char message[BUF_SIZE];
     int opt = 1;
 
     // Gestion des signaux pour une extinction en douceur et le compte des connexions actives
@@ -60,7 +60,7 @@ int main()
     }
 
     // Écoute des connexions
-    if (listen(server_socket, 2) == -1)
+    if (listen(server_socket, MAX_CLIENTS) == -1)
     {
         perror("Échec de l'écoute");
         close(server_socket);
@@ -75,7 +75,7 @@ int main()
         FD_SET(server_socket, &read_fds);
         max_sd = server_socket;
 
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < MAX_CLIENTS; i++)
         {
             if (client_sockets[i] > 0)
             {
@@ -106,7 +106,7 @@ int main()
             active_connections++;
             printf("Nombre de connexions actives : %d\n", active_connections);
 
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < MAX_CLIENTS; i++)
             {
                 if (client_sockets[i] == 0)
                 {
@@ -117,7 +117,7 @@ int main()
         }
 
         // Vérifier les opérations d'E/S sur n'importe quel socket
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < MAX_CLIENTS; i++)
         {
             if (client_sockets[i] > 0 && FD_ISSET(client_sockets[i], &read_fds))
             {
@@ -134,15 +134,13 @@ int main()
                 else
                 {
                     buffer[valread] = '\0';
-                    printf("Client %d: %s\n", i + 1, buffer);
 
-                    // Envoyer le message aux deux clients
-                    for (int j = 0; j < 2; j++)
+                    // Envoyer le message aux clients jumelés
+                    for (int j = 0; j < MAX_CLIENTS; j++)
                     {
-                        if (client_sockets[j] > 0)
+                        if (client_sockets[j] > 0 && j != i && j / 2 == i / 2)
                         {
-                            snprintf(message, sizeof(message), "Client %d: %s", i + 1, buffer);
-                            if (write(client_sockets[j], message, strlen(message)) == -1)
+                            if (write(client_sockets[j], buffer, strlen(buffer)) == -1)
                             {
                                 perror("Échec de l'écriture au client");
                             }
@@ -162,7 +160,7 @@ void signal_handler(int sig)
     if (sig == SIGUSR1)
     {
         printf("Arrêt du serveur...\n");
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < MAX_CLIENTS; i++)
         {
             if (client_sockets[i] > 0)
             {
