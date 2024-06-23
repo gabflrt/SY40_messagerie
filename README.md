@@ -11,21 +11,23 @@ Ce projet implémente un serveur et un client en C pour établir une communicati
 - Un compilateur C (par exemple, gcc)
 - Un système Unix/Linux
 ### Compilation
-Pour compiler le serveur et le client, utilisez les commandes suivantes '''make'''
+Pour compiler le serveur et le client, utilisez les commandes suivantes `code`
 
 ## Utilisation
 ### Lancer le Serveur
 Pour démarrer le serveur, exécutez :
 
+```sh
 ./bin/server
+```
 Le serveur écoute sur le port 8080 par défaut. Vous pouvez modifier le port en changeant la valeur de la constante PORT dans le code source.
 
 ### Lancer le Client
 Pour démarrer le client, exécutez :
 
-sh
-Copy code
+```sh
 ./bin/client <client_name>
+```
 Remplacez <client_name> par le nom du client que vous souhaitez utiliser. Ce nom sera affiché avec les messages envoyés.
 
 ### Communication entre Clients
@@ -39,8 +41,8 @@ Le serveur gère les signaux suivants :
 Pour envoyer un signal au serveur, vous pouvez utiliser la commande kill avec l'identifiant de processus (PID) du serveur. Par exemple :
 
 ```sh
-Copy code
-kill -SIGUSR1 <server_pid>```
+kill -SIGUSR1 <server_pid>
+```
 
 ## Fonctionnalités
 ### Serveur
