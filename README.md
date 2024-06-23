@@ -11,7 +11,7 @@ Ce projet implémente un serveur et un client en C pour établir une communicati
 - Un compilateur C (par exemple, gcc)
 - Un système Unix/Linux
 ### Compilation
-Pour compiler le serveur et le client, utilisez les commandes suivantes `code`
+Pour compiler le serveur et le client, utilisez les commandes suivantes `make`
 
 ## Utilisation
 ### Lancer le Serveur
