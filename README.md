@@ -57,6 +57,5 @@ kill -SIGUSR1 <server_pid>
 
 
 ## Nettoyage
-Pour nettoyer les fichiers objets et les exécutables générés, utilisez la commande :
-make clean
+Pour nettoyer les fichiers objets et les exécutables générés, utilisez la commande : `make clean`
 
