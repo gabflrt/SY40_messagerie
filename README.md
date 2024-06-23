@@ -20,7 +20,7 @@ Pour démarrer le serveur, exécutez :
 ./bin/server
 Le serveur écoute sur le port 8080 par défaut. Vous pouvez modifier le port en changeant la valeur de la constante PORT dans le code source.
 
-Lancer le Client
+### Lancer le Client
 Pour démarrer le client, exécutez :
 
 sh
@@ -28,19 +28,19 @@ Copy code
 ./bin/client <client_name>
 Remplacez <client_name> par le nom du client que vous souhaitez utiliser. Ce nom sera affiché avec les messages envoyés.
 
-Communication entre Clients
+### Communication entre Clients
 Les messages envoyés par un client seront transmis aux autres clients jumelés (client 0 avec client 1, client 2 avec client 3, etc.).
 
-Gestion des Signaux
+### Gestion des Signaux
 Le serveur gère les signaux suivants :
+- SIGUSR1 : Arrête le serveur et ferme toutes les connexions clients.
+- SIGUSR2 : Affiche le nombre de connexions actives.
 
-SIGUSR1 : Arrête le serveur et ferme toutes les connexions clients.
-SIGUSR2 : Affiche le nombre de connexions actives.
 Pour envoyer un signal au serveur, vous pouvez utiliser la commande kill avec l'identifiant de processus (PID) du serveur. Par exemple :
 
-sh
+```sh
 Copy code
-kill -SIGUSR1 <server_pid>
+kill -SIGUSR1 <server_pid>```
 
 ## Fonctionnalités
 ### Serveur
